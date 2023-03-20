@@ -1,0 +1,78 @@
+---
+title: "20230320_OD_values_InnoNiche"
+output: html_document
+date: '2023-03-20'
+---
+
+```{r setup, echo =FALSE}
+.libPaths('C:\\Users\\zuendj\\Documents\\R4Libs')
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "C:/Users/zuendj/Desktop/03_data R/tryptophan_enrichment", cho = TRUE, warning = FALSE, message = FALSE)
+
+# Install Packages:
+# install.packages("rlang")
+# install.packages("tidyr")
+# install.packages("ggbreak")
+
+
+library(tidyverse)
+library(ggplot2)
+library(tidyr)
+# install.packages("devtools")
+# devtools::install_github("slowkow/ggrepel")
+library(ggrepel)
+library(ggbreak)
+library(stringr)
+library(stats)
+library(plyr)
+library(openxlsx)
+```
+
+##Load the Data
+```{r}
+#########################################
+#Load the data
+########################################
+
+setwd("P:/Shared_documents/Janina Zünd/08_phd//Raw Data_PB/OD")
+files <- list.files(path = "P:/Shared_documents/Janina Zünd/08_phd//Raw Data_PB/OD")
+
+options(scipen=999)
+#########################################
+#load the data
+########################################
+substrates <-c("AG", "Nut")
+colnames<-c("file", "replicate", substrates)
+
+replicates=3
+n_substrates=length(substrates)
+#define empty matrices, no values added so far 
+OD_values<-matrix(0, nrow = length(files)*3, ncol = length(colnames))
+OD_values<- setNames(as.data.frame(OD_values), colnames)
+
+row = 1
+for (l in 1:length(files)) {
+  raw = read.xlsx(files[l])
+  OD_values[c(row:(row+2)), 1] = files[l]
+  
+  for (i in 1:replicates){
+  OD_values[row+i-1, 2] = i
+  
+
+    ##AG is in row 3 and starts from col 2
+    OD_values[row+i-1, c(1+2)] = raw[3, c(2+i-1)]
+    
+    ##Nut is in row 3 and starts from col 5
+    OD_values[row+i-1, c(2+2)] = raw[3, c(5+i-1)]
+    
+    
+    
+    }
+  row=row+3}  
+
+OD_values$pH <-"6.5"
+OD_values$redox<-"normal"
+OD_values$donor_name <- str_split_fixed(OD_values$file, "_", 3)[,2]
+
+
+```
