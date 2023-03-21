@@ -1,0 +1,277 @@
+---
+title: "20230320_meta_values_InnoNiche"
+output: html_document
+date: '2023-03-20'
+---
+
+```{r setup, echo =FALSE}
+.libPaths('C:\\Users\\zuendj\\Documents\\R4Libs')
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "P:/Shared_documents/Janina Zünd/08_phd//Raw Data_PB", cho = TRUE, warning = FALSE, message = FALSE)
+
+# Install Packages:
+# install.packages("rlang")
+# install.packages("tidyr")
+# install.packages("ggbreak")
+
+
+library(tidyverse)
+library(ggplot2)
+library(tidyr)
+# install.packages("devtools")
+# devtools::install_github("slowkow/ggrepel")
+library(ggrepel)
+library(ggbreak)
+library(stringr)
+library(stats)
+library(plyr)
+library(openxlsx)
+```
+
+##Load the Data
+```{r}
+#########################################
+#Load the data
+########################################
+
+setwd("P:/Shared_documents/Janina Zünd/08_phd//Raw Data_PB")
+
+meta = read.xlsx("P:/Shared_documents/Janina Zünd/08_phd//Raw Data_PB/01_metadata_files/metadata_file.xlsx")
+
+#add redox column
+meta$redox<-NA
+matches <- grep("-R-", meta$sample_id, ignore.case = TRUE)
+meta[matches, "redox"]  = c("low-redox")
+meta[-c(matches), "redox"]  = c("normal-redox")
+
+#remove R from sample_id as otherwise sample_id cannot be splitted into three different parts
+library(stringr)
+
+meta$sample_id<-  str_replace(meta$sample_id, "-R-", "-")
+
+  
+
+#splitt sample_id to get donor info etc
+splitted<-setNames(as.data.frame(str_split_fixed(meta$sample_id, pattern="-", 3)), c("donor_name", "pH", "substrate"))
+
+#combine splitted info with overall df
+meta_final<-cbind(meta, splitted)
+
+meta_final%>%
+  mutate(substrate = str_replace(substrate, "DL_LT", "LT"))%>%
+  mutate(substrate = str_replace(substrate, "b_Glc", "bGlc"))%>%
+  mutate(substrate = str_replace(substrate, "PEa", "Pea"))->meta_final
+
+```
+
+```{r}
+write.xlsx(meta_final, "P:/Shared_documents/Janina Zünd/08_phd//Raw Data_PB/01_metadata_files/metadata_file_adapted_all.xlsx", sheetName = "Sheet1", 
+  colNames = TRUE, rowNames = F, append = FALSE)
+```
+
+
+
+# 2. HPLC results
+```{r}
+#########################################
+#Load the data
+########################################
+
+
+files <- list.files(path = "P:/Shared_documents/Janina Zünd/08_phd/Raw Data_PB/04_HPLC_raw/00_HPLC")
+colnames<-c("hplc_id", "Succinate", "Lactate", "Formate", "Acetate","Propionate", "Isobutyrate", "Butyrate", "Isovalerate", "Valerate")
+
+HPLC_values<-matrix(0, 0, ncol = length(colnames))
+HPLC_values<- setNames(as.data.frame(HPLC_values), colnames)
+
+for (l in 1:length(files)) {
+  
+setwd("P:/Shared_documents/Janina Zünd/08_phd/Raw Data_PB/04_HPLC_raw/00_HPLC")
+  
+  raw = read.xlsx(files[l])
+  HPLC_values<-rbind(HPLC_values, as.data.frame(raw[,c("hplc_id", "Succinate", "Lactate", "Formate", "Acetate","Propionate", "Isobutyrate", "Butyrate", "Isovalerate", "Valerate")]))
+  
+}  
+
+
+```
+```{r}
+#add redox column
+HPLC_values$redox<-NA
+matches <- grep("-R", HPLC_values$hplc_id, ignore.case = TRUE)
+HPLC_values[matches, "redox"]  = c("low-redox")
+HPLC_values[-c(matches), "redox"]  = c("normal-redox")
+
+#add redox column
+HPLC_values$tryptophan<-NA
+matches <- grep("-Trp", HPLC_values$hplc_id, ignore.case = TRUE)
+HPLC_values[matches, "tryptophan"]  = c("Trp")
+HPLC_values[-c(matches), "tryptophan"]  = c("no-Trp")
+
+HPLC_values %>% 
+  mutate(hplc_id = str_replace(hplc_id, "pH", "_pH"))%>%
+  mutate(hplc_id = str_replace(hplc_id, "6.5", "6.5_"))%>%
+  mutate(hplc_id = str_replace(hplc_id, "5.8", "5.8_"))%>%
+  mutate(hplc_id = str_replace(hplc_id, "-R", ""))%>%
+  mutate(hplc_id = str_replace(hplc_id, "-Trp", ""))%>%
+  mutate(hplc_id = str_replace(hplc_id, "ctrl.", "ctrl"))%>%
+  mutate(hplc_id = str_replace(hplc_id, "PEa", "Pea"))%>%
+  filter(str_detect(hplc_id, "PBSTD") != TRUE)->HPLC_values
+
+
+#splitt sample_id to get donor info etc
+splitted<-setNames(as.data.frame(str_split_fixed(HPLC_values$hplc_id, pattern="_", 4)), c("random", "donor_name", "pH", "substrate"))
+
+#combine splitted info with overall df
+HPLC_final<-cbind(HPLC_values, splitted[,c(2:4)])
+
+HPLC_final
+HPLC_final[, c("Succinate", "Lactate", "Formate", "Acetate","Propionate", "Isobutyrate", "Butyrate", "Isovalerate", "Valerate")] <- sapply(HPLC_final[, c("Succinate", "Lactate", "Formate", "Acetate","Propionate", "Isobutyrate", "Butyrate", "Isovalerate", "Valerate")],as.numeric)
+```
+
+# Blank correction
+
+```{r}
+raw = read.xlsx("P:/Shared_documents/Janina Zünd/08_phd/Raw Data_PB/04_HPLC_raw/media/2022-06-15_HPLC_results_Media.xlsx")
+blanks<-raw[,c("substrate", "Succinate", "Lactate", "Formate", "Acetate","Propionate", "Isobutyrate", "Butyrate", "Isovalerate", "Valerate")]
+```
+
+
+```{r}
+substrates<-blanks$substrate
+metabolites<-c("Succinate", "Lactate", "Formate", "Acetate","Propionate", "Isobutyrate", "Butyrate", "Isovalerate", "Valerate")
+
+for (r in 1:nrow(HPLC_final)){
+  
+for (i in 1:length(substrates)){
+  if (HPLC_final[r, c("substrate")] == substrates[i]){
+    blank<-subset(blanks, substrate %in% substrates[i])
+    for (m in 1:length(metabolites)){
+      met<-paste0("Δ", metabolites[m])
+    HPLC_final[r,met] = HPLC_final[r,metabolites[m]] - blank[,metabolites[m]]
+    }}}}
+
+```
+
+```{r}
+write.xlsx(HPLC_final, "P:/Shared_documents/Janina Zünd/08_phd//Raw Data_PB/01_metadata_files/HPLC_blank_corrected.xlsx", sheetName = "Sheet1", 
+  colNames = TRUE, rowNames = F, append = FALSE)
+```
+
+# Merge with Metadata file
+
+```{r}
+meta_data_hplc<-join(meta_final, HPLC_final)
+```
+
+```{r}
+meta_data_hplc %>%
+  subset(tryptophan %in% "no-Trp")->meta_KUN
+
+
+write.xlsx(meta_KUN, "P:/Shared_documents/Janina Zünd/08_phd//Raw Data_PB/01_metadata_files/metadata_file_GABA.xlsx", sheetName = "Sheet1", 
+  colNames = TRUE, rowNames = F, append = FALSE)
+```
+
+```{r}
+meta_data_hplc %>%
+  subset(donor_name %in% c("AVCW", "JBJW", "YQRV", "YFKF", "BXDM", "GCVJ", "XNMN", "HTKE", "EAJK", "KTRS", "HXBH", "TPSJ","FNNW", "JCDD", "GWDF", "SEEQ"))%>%
+  subset(pH %in% "pH6.5")%>%
+  subset(redox %in% "normal-redox")->meta_trp
+
+
+write.xlsx(meta_trp, "P:/Shared_documents/Janina Zünd/08_phd//Raw Data_PB/01_metadata_files/metadata_file_TRYPTOPHAN.xlsx", sheetName = "Sheet1", 
+  colNames = TRUE, rowNames = F, append = FALSE)
+```
+
+# Analysis metadata Tryptophan plate
+
+```{r}
+meta_trp%>%
+  subset(!sample_type %in% "feces")->cultures
+```
+# 1. Growth
+```{r}
+# cultures$condition<-factor(cultures$condition, levels = c("H2O", "Glc", "3C", "3C+Muc", "7C", "7C-Muc", "SS", "Nut", "GMM like", "BHI like"))
+# 
+# cultures%>%
+#   ggplot(aes(x=condition, y=OD600))+
+#   geom_boxplot(outlier.colour = NA)+
+#   geom_jitter(aes(colour=donor), width=0.1)+
+#   labs(colour= "Donor")
+# 
+# ggsave(filename = "OD.jpeg", 
+#        path = "C:/Users/zuendj/Desktop/03_data R/wp1/follow_up/output", 
+#        width = 15,
+#        height = 10,
+#        units = c("cm"))
+```
+
+# 2. HPLC
+```{r}
+cultures$total_C<-0
+
+scfas<-c("ΔSuccinate", "ΔLactate" , "ΔFormate", "ΔAcetate","ΔPropionate","ΔButyrate")
+scfas_rel<-c("rel_succinate", "rel_lactate" , "rel_formate", "rel_acetate","rel_propionate","rel_butyrate")
+
+
+for (i in 1:nrow(cultures)){
+  x<-cultures[i,scfas]
+  for (z in 1:6){
+    if (x[1,z]<0){
+
+      x[1,z]=0
+
+    }
+  }
+  
+  
+  
+  cultures[i,c("total_C")]<-  x[1,c("ΔLactate")]+x[1,c("ΔFormate")]+x[1,c("ΔAcetate")]+x[1,c("ΔPropionate")]+x[1,c("ΔSuccinate")]
+  
+  for (j in 1:length(scfas)){
+    cultures[i,scfas_rel[j]] = cultures[i,scfas[j]] / cultures[i, c("total_C")]
+  }
+}
+```
+
+```{r}
+cultures%>%
+  ggplot(aes(x=substrate, y=total_C))+
+  geom_boxplot(outlier.colour = NA, aes(fill=tryptophan))+
+  geom_jitter(aes(colour=donor_name, group=tryptophan), position=position_dodge(width=0.95))+
+  xlab("Substrate")+
+  ylab("total SCFA [mM]")+
+  labs(colour= "Donor")
+
+ggsave(filename = "total_scfa.jpeg", 
+       path = "C:/Users/zuendj/Desktop/03_data R/wp3/InnoNiche_data/output", 
+       width = 15,
+       height = 10,
+       units = c("cm"))
+```
+
+```{r}
+cultures$substrate<-factor(cultures$substrate, levels=c("H2O", "AG"  , "bGlc", "LT" ,  "FO" ,  "IN"  , "Muc" , "Nut" , "Pea" , "PE",   "SS"  , "SU"  , "XY"))
+
+cultures%>%
+  subset(!substrates %in% c("LT", "FO", "SU"))%>%
+  subset(!sample_id %in% "TPSJ-pH6.5-SS")%>%
+  gather(scfa, rel_conc, "rel_succinate":"rel_butyrate")%>%
+  ggplot(aes(x=substrate, y=rel_conc))+
+  geom_boxplot(outlier.colour = NA, aes(fill=tryptophan))+
+  geom_jitter(aes(colour=donor_name, group=tryptophan),alpha=0.75, size=2, position=position_dodge(width=0.8))+
+  facet_grid(rows=vars(scfa))+
+  geom_hline(yintercept=0, linetype="dashed", color = "red")+
+  xlab("Substrate")+
+  ylab("relative SCFA concentration")+
+  labs(colour= "Donor")+
+  ggtitle("Relative metabolite production")
+
+ggsave(filename = "rel_scfa.jpeg", 
+       path = "C:/Users/zuendj/Desktop/03_data R/wp3/InnoNiche_data/output", 
+       width = 30,
+       height = 30,
+       units = c("cm"))
+```
+
